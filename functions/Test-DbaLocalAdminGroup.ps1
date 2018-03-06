@@ -58,17 +58,11 @@ function Test-DbaLocalAdminGroup {
             }
 
             if ($members) {
-                foreach ($member in $members) {
-                    foreach ($login in $LoginName) {
-                        if ($login -ne $member.Account) {
-                            continue
-                        }
-
-                        [pscustomobject]@{
-                            ComputerName = $resolved.ComputerName
-                            Login        = $login
-                            IsMember     = ($login -eq $member.Account)
-                        }
+                foreach ($login in $LoginName) {
+                    [pscustomobject]@{
+                        ComputerName = $resolved.ComputerName
+                        Login        = $login
+                        IsMember     = ($login -in $members.Account)
                     }
                 }
             }
