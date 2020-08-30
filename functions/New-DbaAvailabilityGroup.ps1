@@ -193,6 +193,15 @@ function New-DbaAvailabilityGroup {
         Creates a new availability group with a primary replica on sql1 and a secondary on sql2. Automatically adds the database pubs.
 
     .EXAMPLE
+        PS C:\> New-DbaAvailabilityGroup -Primary sql1 -Secondary sql2 -Name ag1 -Database pubs -ClusterType wsfc -SeedingMode Automatic -FailoverMode Manual
+
+        PS C:\> New-DbaAvailabilityGroup -Primary sql3 -Secondary sql4 -Name ag2 -ClusterType wsfc -Dhcp -SeedingMode Automatic -FailoverMode Manual
+
+        PS C:\> New-DbaAvailabilityGroup -Primary sql3 -Secondary -sql4 -Listener1 ag1 -Listener2 ag2 -Name dag -Database pubs -Distributed -SeedingMode Automatic -FailoverMode Manual
+
+        Creates a new distributed availability group.
+
+    .EXAMPLE
         PS C:\> $cred = Get-Credential sqladmin
         PS C:\> $params = @{
         >> Primary = "sql1"
@@ -260,6 +269,11 @@ function New-DbaAvailabilityGroup {
         [ipaddress]$SubnetMask = "255.255.255.0",
         [int]$Port = 1433,
         [switch]$Dhcp,
+
+        #Distibuted AGs
+        [switch]$Distributed,
+        [string]$Listener1,
+        [string]$Listener2,
         [switch]$EnableException
     )
     begin {
@@ -300,11 +314,20 @@ function New-DbaAvailabilityGroup {
             return
         }
 
+        if ($Distributed -and $server.VersionMajor -lt 13) {
+            Stop-Function -Message "Distributed availability groups are only supported in SQL Server 2016 and above" -Target $Primary
+            return
+        }
+
         Write-ProgressHelper -StepNumber ($stepCounter++) -Message "Checking perquisites"
 
         # Don't reuse $server here, it fails
         if (Get-DbaAvailabilityGroup -SqlInstance $Primary -SqlCredential $PrimarySqlCredential -AvailabilityGroup $Name) {
-            Stop-Function -Message "Availability group named $Name already exists on $Primary"
+            if (-not $Distributed) {
+                Stop-Function -Message "Availability group named $Name already exists on $Primary"
+            } else {
+                Stop-Function -Message "Distributed availability group named $Name already exists on $Primary"
+            }
             return
         }
 
@@ -323,8 +346,12 @@ function New-DbaAvailabilityGroup {
             }
         }
 
-        if ($Database -and -not $UseLastBackup -and -not $SharedPath -and $Secondary -and $SeedingMode -ne 'Automatic') {
-            Stop-Function -Continue -Message "You must specify a SharedPath when adding databases to a manually seeded availability group"
+        if ($Database -and -not $UseLastBackup -and -not $SharedPath -and ($Secondary -or $Distributed) -and $SeedingMode -ne 'Automatic') {
+            if (-not $Distributed) {
+                Stop-Function -Continue -Message "You must specify a SharedPath when adding databases to a manually seeded availability group"
+            } else {
+                Stop-Function -Continue -Message "You must specify a SharedPath when adding databases to a manually seeded distributed availability group"
+            }
             return
         }
 
@@ -373,7 +400,11 @@ function New-DbaAvailabilityGroup {
 
         # database checks
         if ($Database) {
-            $dbs += Get-DbaDatabase -SqlInstance $Primary -SqlCredential $PrimarySqlCredential -Database $Database
+            if (-not $Distributed) {
+                $dbs += Get-DbaDatabase -SqlInstance $Primary -SqlCredential $PrimarySqlCredential -Database $Database
+            } else {
+                $dbs += Get-DbaDatabase -SqlInstance $Listener1 -SqlCredential $PrimarySqlCredential -Database $Database
+            }
         }
 
         foreach ($primarydb in $dbs) {
@@ -397,10 +428,20 @@ function New-DbaAvailabilityGroup {
             }
         }
 
-        Write-ProgressHelper -StepNumber ($stepCounter++) -Message "Creating availability group named $Name on $Primary"
+        if (-not $Distributed) {
+            Write-ProgressHelper -StepNumber ($stepCounter++) -Message "Creating availability group named $Name on $Primary"
+        } else {
+            Write-ProgressHelper -StepNumber ($stepCounter++) -Message "Creating distributed availability group named $Name on $Primary"
+        }
 
         # Start work
-        if ($Pscmdlet.ShouldProcess($Primary, "Setting up availability group named $Name and adding primary replica")) {
+        if (-not $Distributed) {
+            $progress = "Setting up availability group named $Name and adding primary replica"
+        } else {
+            $progress = "Setting up distributed availability group named $Name and adding primary replica"
+        }
+
+        if ($Pscmdlet.ShouldProcess($Primary, $progress)) {
             try {
                 $ag = New-Object Microsoft.SqlServer.Management.Smo.AvailabilityGroup -ArgumentList $server, $Name
                 $ag.AutomatedBackupPreference = [Microsoft.SqlServer.Management.Smo.AvailabilityGroupAutomatedBackupPreference]::$AutomatedBackupPreference
@@ -411,6 +452,7 @@ function New-DbaAvailabilityGroup {
                     $ag.BasicAvailabilityGroup = $Basic
                     $ag.DatabaseHealthTrigger = $DatabaseHealthTrigger
                     $ag.DtcSupportEnabled = $DtcSupport
+                    $ag.IsDistributedAvailabilityGroup = $Distributed
                 }
 
                 if ($server.VersionMajor -ge 14) {
