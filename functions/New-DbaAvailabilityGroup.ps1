@@ -128,6 +128,12 @@ function New-DbaAvailabilityGroup {
 
         The far endpoint must have a certificate with the public key matching the private key of the specified certificate.
 
+    .PARAMETER ListenerName
+        Sets listener name for primary AG.
+
+    .PARAMETER DagListenerName
+        Sets listener name for the Distributed AG.
+
     .PARAMETER IPAddress
         Sets the IP address of the availability group listener.
 
@@ -265,6 +271,8 @@ function New-DbaAvailabilityGroup {
         [string]$Certificate,
         # network
 
+        [string]$ListenerName,
+        [string]$DagListnerName,
         [ipaddress[]]$IPAddress,
         [ipaddress]$SubnetMask = "255.255.255.0",
         [int]$Port = 1433,
@@ -272,8 +280,6 @@ function New-DbaAvailabilityGroup {
 
         #Distibuted AGs
         [switch]$Distributed,
-        [string]$Listener1,
-        [string]$Listener2,
         [switch]$EnableException
     )
     begin {
@@ -355,6 +361,14 @@ function New-DbaAvailabilityGroup {
             return
         }
 
+        if (-not $Distributed -and $null -eq $ListenerName) {
+            Stop-Function -Continue -Message "You must specify a name for the listener for the you AG."
+            return
+        } elseif ($Distributed -and $null -eq $DagListenerName) {
+            Stop-Function -Continue -Message "You must specify a specficy a name for the Distributed AG Listener "
+            return
+        }
+
         if ($server.HostPlatform -eq "Linux") {
             # New to SQL Server 2017 (14.x) is the introduction of a cluster type for AGs. For Linux, there are two valid values: External and None.
             if ($ClusterType -notin "External", "None") {
@@ -402,8 +416,6 @@ function New-DbaAvailabilityGroup {
         if ($Database) {
             if (-not $Distributed) {
                 $dbs += Get-DbaDatabase -SqlInstance $Primary -SqlCredential $PrimarySqlCredential -Database $Database
-            } else {
-                $dbs += Get-DbaDatabase -SqlInstance $Listener1 -SqlCredential $PrimarySqlCredential -Database $Database
             }
         }
 
@@ -438,7 +450,7 @@ function New-DbaAvailabilityGroup {
         if (-not $Distributed) {
             $progress = "Setting up availability group named $Name and adding primary replica"
         } else {
-            $progress = "Setting up distributed availability group named $Name and adding primary replica"
+            $progress = "Setting up distributed availability group named $Name and adding primary forwarder"
         }
 
         if ($Pscmdlet.ShouldProcess($Primary, $progress)) {
@@ -547,9 +559,12 @@ function New-DbaAvailabilityGroup {
         }
         Write-ProgressHelper -StepNumber ($stepCounter++) -Message $progressmsg
 
+        if ($Distrbuted) {
+            $ListenerName = $DagListnerName
+        }
         if ($IPAddress) {
             if ($Pscmdlet.ShouldProcess($Primary, "Adding static IP listener for $Name to the Primary replica")) {
-                $null = Add-DbaAgListener -InputObject $ag -IPAddress $IPAddress -SubnetMask $SubnetMask -Port $Port -Dhcp:$Dhcp
+                $null = Add-DbaAgListener -Name $ListenerName -InputObject $ag -IPAddress $IPAddress -SubnetMask $SubnetMask -Port $Port -Dhcp:$Dhcp
             }
         } elseif ($Dhcp) {
             if ($Pscmdlet.ShouldProcess($Primary, "Adding DHCP listener for $Name to all replicas")) {
