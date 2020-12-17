@@ -84,7 +84,7 @@ function Copy-DbaDatabase {
 
         The structure on Source  will be kept exactly, so consider this if you're migrating between different versions and use part of Microsoft's default Sql structure (MSSql12.INSTANCE, etc)
 
-        To reuse Destination folder structure, use the  -WithReplace switch.
+        To reuse Destination folder structure, use the -WithReplace switch.
 
     .PARAMETER IncludeSupportDbs
         If this switch is enabled, ReportServer, ReportServerTempDb, SSISDB, and distribution databases will be copied if they exist on Source. A log file named $SOURCE-$destinstance-$date-Sqls.csv will be written to the current directory.
@@ -120,6 +120,12 @@ function Copy-DbaDatabase {
 
     .PARAMETER SetSourceOffline
         If this switch is enabled, the Source database will be set to Offline after being copied.
+
+    .PARAMETER KeepCDC
+        Indicates whether CDC information should be copied as part of the database
+
+    .PARAMETER KeepReplication
+        Indicates whether replication configuration should be copied as part of the database copy operation
 
     .PARAMETER WhatIf
         If this switch is enabled, no actions are performed but informational messages will be displayed that explain what would happen if the command were to run.
@@ -168,7 +174,7 @@ function Copy-DbaDatabase {
     .EXAMPLE
         PS C:\> Copy-DbaDatabase -Source sql2014a -Destination sqlcluster, sql2016 -BackupRestore -UseLastBackup -Force
 
-        Migrates all user databases to sqlcluster and sql2016 using the last Full, Diff and Log backups from sql204a. If the databases exists on the destinations, they will be dropped prior to attach.
+        Migrates all user databases to sqlcluster and sql2016 using the last Full, Diff and Log backups from sql204a. If the databases exist on the destinations, they will be dropped prior to attach.
 
         Note that the backups must exist in a location accessible by all destination servers, such a network share.
 
@@ -177,7 +183,7 @@ function Copy-DbaDatabase {
 
         Migrates all user databases except for Northwind and pubs by using backup/restore (copy-only). Backup files are stored in \\fileshare\sql\migration. If the database exists on the destination, it will be dropped prior to attach.
 
-        It also includes the support databases (ReportServer, ReportServerTempDb, distribution).
+        It also includes the support databases (ReportServer, ReportServerTempDb, SSISDB, distribution).
     .EXAMPLE
         PS C:\> Copy-DbaDatabase -Source sql2014 -Destination managedinstance.cus19c972e4513d6.database.windows.net -DestinationSqlCredential $cred -AllDatabases -BackupRestore -SharedPath https://someblob.blob.core.windows.net/sql
 
@@ -239,6 +245,10 @@ function Copy-DbaDatabase {
         [parameter(ValueFromPipeline)]
         [Microsoft.SqlServer.Management.Smo.Database[]]$InputObject,
         [switch]$NoCopyOnly,
+        [parameter(ParameterSetName = "DbBackup")]
+        [switch]$KeepCDC,
+        [parameter(ParameterSetName = "DbBackup")]
+        [switch]$KeepReplication,
         [switch]$SetSourceOffline,
         [string]$NewName,
         [string]$Prefix,
@@ -269,7 +279,9 @@ function Copy-DbaDatabase {
             return
         }
 
-        if ($Force) { $ConfirmPreference = 'none' }
+        if ($Force) {
+            $ConfirmPreference = 'none'
+        }
 
         function Join-Path {
             <#
@@ -412,7 +424,7 @@ function Copy-DbaDatabase {
                             if ($destServer.VersionMajor -lt 10) {
                                 $directory = "$directory\FTDATA"
                             }
-                            $fileName = Split-Path($physical) -leaf
+                            $fileName = Split-Path($physical) -Leaf
                             $d.physical = "$directory\$fileName"
                         }
                         $d.logical = $logical
@@ -480,7 +492,7 @@ function Copy-DbaDatabase {
             $fileStructure = [pscustomobject]@{
                 "databases" = $dbcollection
             }
-            Write-Progress -id 1 -Activity "Processing database file structure" -Status "Completed" -Completed
+            Write-Progress -Id 1 -Activity "Processing database file structure" -Status "Completed" -Completed
             return $fileStructure
         }
 
@@ -595,26 +607,26 @@ function Copy-DbaDatabase {
                     $remotefilename = $dbdestination[$file].remotefilename
                     $from = $dbsource[$file].remotefilename
                     try {
-                        if (Test-Path $from -pathtype container) {
+                        if (Test-Path $from -PathType container) {
                             $null = New-Item -ItemType Directory -Path $remotefilename -Force
-                            Start-BitsTransfer -Source "$from\*.*" -Destination $remotefilename
+                            Start-BitsTransfer -Source "$from\*.*" -Destination $remotefilename -ErrorAction Stop
 
-                            $directories = (Get-ChildItem -recurse $from | Where-Object {
+                            $directories = (Get-ChildItem -Recurse $from | Where-Object {
                                     $_.PsIsContainer
                                 }).FullName
                             foreach ($directory in $directories) {
                                 $newdirectory = $directory.replace($from, $remotefilename)
                                 $null = New-Item -ItemType Directory -Path $newdirectory -Force
-                                Start-BitsTransfer -Source "$directory\*.*" -Destination $newdirectory
+                                Start-BitsTransfer -Source "$directory\*.*" -Destination $newdirectory -ErrorAction Stop
                             }
                         } else {
                             Write-Message -Level Verbose -Message "Copying $from for $dbName."
-                            Start-BitsTransfer -Source $from -Destination $remotefilename
+                            Start-BitsTransfer -Source $from -Destination $remotefilename -ErrorAction Stop
                         }
                     } catch {
                         try {
                             # Sometimes BITS trips out temporarily on cloned drives.
-                            Start-BitsTransfer -Source $from -Destination $remotefilename
+                            Start-BitsTransfer -Source $from -Destination $remotefilename -ErrorAction Stop
                         } catch {
                             Write-Message -Level Verbose -Message "Start-BitsTransfer did not succeed. Now attempting with Copy-Item - no progress bar will be shown."
                             try {
@@ -636,7 +648,7 @@ function Copy-DbaDatabase {
             <#
 
                     .SYNOPSIS
-                    Internal function. Performs checks, then executes Dismount-SqlDatabase on a database, copies its files to the new server,    then performs Mount-SqlDatabase. $sourceServer and $destServer are SMO server objects.
+                    Internal function. Performs checks, then executes Dismount-SqlDatabase on a database, copies its files to the new server, then performs Mount-SqlDatabase. $sourceServer and $destServer are SMO server objects.
 
                     $fileStructure is a custom object generated by Get-SqlFileStructure
 
@@ -648,7 +660,7 @@ function Copy-DbaDatabase {
                 [object]$fileStructure,
                 [string]$dbName
             )
-            if ($Pscmdlet.ShouldProcess($dbname, "Starting detaching and re-attaching from $sourceServer to $destServer")) {
+            if ($Pscmdlet.ShouldProcess($dbName, "Starting detaching and re-attaching from $sourceServer to $destServer")) {
                 $destfilestructure = New-Object System.Collections.Specialized.StringCollection
                 $sourceFileStructure = New-Object System.Collections.Specialized.StringCollection
                 $dbOwner = $sourceServer.databases[$dbName].owner
@@ -930,7 +942,7 @@ function Copy-DbaDatabase {
 
             Write-Message -Level Verbose -Message "Building database list."
             $databaseList = New-Object System.Collections.ArrayList
-            $SupportDBs = "ReportServer", "ReportServerTempDB", "distribution"
+            $SupportDBs = "ReportServer", "ReportServerTempDB", "distribution", "SSISDB"
             foreach ($currentdb in ($sourceServer.Databases | Where-Object IsAccessible)) {
                 $dbName = $currentdb.Name
                 $dbOwner = $currentdb.Owner
@@ -991,31 +1003,31 @@ function Copy-DbaDatabase {
                     $dbOwner = $currentdb.Owner
                     $destinationDbName = $dbName
                     if ((Test-Bound "NewName")) {
-                        Write-Message -Level Verbose -Message "NewName specified, copying $dbname as $NewName"
+                        Write-Message -Level Verbose -Message "NewName specified, copying $dbName as $NewName"
                         $destinationDbName = $NewName
                         $replaceInFile = $True
                     }
                     if ($(Test-Bound "Prefix")) {
                         $destinationDbName = $prefix + $destinationDbName
-                        Write-Message -Level Verbose -Message "Prefix supplied, copying $dbname as $destinationDbName"
+                        Write-Message -Level Verbose -Message "Prefix supplied, copying $dbName as $destinationDbName"
                     }
 
-                    $filestructure.databases[$dbname].Add('destinationDbName', $destinationDbName)
-                    ForEach ($key in $filestructure.databases[$dbname].Destination.Keys) {
-                        $splitFileName = Split-Path $fileStructure.databases[$dbname].Destination[$key].remotefilename -Leaf
-                        $SplitPath = Split-Path $fileStructure.databases[$dbname].Destination[$key].remotefilename
+                    $filestructure.databases[$dbName].Add('destinationDbName', $destinationDbName)
+                    ForEach ($key in $filestructure.databases[$dbName].Destination.Keys) {
+                        $splitFileName = Split-Path $fileStructure.databases[$dbName].Destination[$key].remotefilename -Leaf
+                        $SplitPath = Split-Path $fileStructure.databases[$dbName].Destination[$key].remotefilename
                         if ($replaceInFile) {
-                            $splitFileName = $splitFileName.replace($dbname, $destinationDbName)
+                            $splitFileName = $splitFileName.replace($dbName, $destinationDbName)
                         }
                         $splitFileName = $prefix + $splitFileName
-                        $filestructure.databases[$dbname].Destination.$key.remotefilename = Join-Path $SplitPath $splitFileName
-                        $splitFileName = Split-Path $filestructure.databases[$dbname].Destination[$key].physical -Leaf
-                        $SplitPath = Split-Path $fileStructure.databases[$dbname].Destination[$key].physical
+                        $filestructure.databases[$dbName].Destination.$key.remotefilename = Join-Path $SplitPath $splitFileName
+                        $splitFileName = Split-Path $filestructure.databases[$dbName].Destination[$key].physical -Leaf
+                        $SplitPath = Split-Path $fileStructure.databases[$dbName].Destination[$key].physical
                         if ($replaceInFile) {
-                            $splitFileName = $splitFileName.replace($dbname, $destinationDbName)
+                            $splitFileName = $splitFileName.replace($dbName, $destinationDbName)
                         }
                         $splitFileName = $prefix + $splitFileName
-                        $filestructure.databases[$dbname].Destination.$key.physical = Join-Path $SplitPath $splitFileName
+                        $filestructure.databases[$dbName].Destination.$key.physical = Join-Path $SplitPath $splitFileName
                     }
 
                     $copyDatabaseStatus = [pscustomobject]@{
@@ -1216,9 +1228,9 @@ function Copy-DbaDatabase {
                             try {
                                 $msg = $null
                                 if ($miRestore) {
-                                    $restoreResultTmp = $backupTmpResult | Restore-DbaDatabase -SqlInstance $destServer -DatabaseName $DestinationdbName -TrustDbBackupHistory -WithReplace:$WithReplace  -EnableException -AzureCredential $AzureCredential
+                                    $restoreResultTmp = $backupTmpResult | Restore-DbaDatabase -SqlInstance $destServer -DatabaseName $DestinationdbName -TrustDbBackupHistory -WithReplace:$WithReplace -EnableException -AzureCredential $AzureCredential
                                 } else {
-                                    $restoreResultTmp = $backupTmpResult | Restore-DbaDatabase -SqlInstance $destServer -DatabaseName $DestinationdbName -ReuseSourceFolderStructure:$ReuseSourceFolderStructure -NoRecovery:$NoRecovery -TrustDbBackupHistory -WithReplace:$WithReplace -Continue:$Continue -EnableException -ReplaceDbNameInFile -AzureCredential $AzureCredential
+                                    $restoreResultTmp = $backupTmpResult | Restore-DbaDatabase -SqlInstance $destServer -DatabaseName $DestinationdbName -ReuseSourceFolderStructure:$ReuseSourceFolderStructure -NoRecovery:$NoRecovery -TrustDbBackupHistory -WithReplace:$WithReplace -Continue:$Continue -EnableException -ReplaceDbNameInFile -AzureCredential $AzureCredential -KeepCDC:$KeepCDC -KeepReplication:$KeepReplication
                                 }
                             } catch {
                                 $msg = $_.Exception.InnerException.InnerException.InnerException.InnerException.Message
@@ -1398,7 +1410,7 @@ function Copy-DbaDatabase {
                         }
 
                         if ($sourceDbBrokerEnabled -ne $NewDatabase.BrokerEnabled) {
-                            if ($Pscmdlet.ShouldProcess($destinstance, "Updating BrokerEnabled on $dbName")) {
+                            if ($Pscmdlet.ShouldProcess($destinstance, "Updating BrokerEnabled on $DestinationDbName")) {
                                 try {
                                     $NewDatabase.BrokerEnabled = $sourceDbBrokerEnabled
                                     $NewDatabase.Alter()
