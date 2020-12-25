@@ -215,7 +215,7 @@ function Set-DbaLogin {
         if (Test-FunctionInterrupt) { return }
 
         $allLogins = @{ }
-        foreach ($instance in $sqlinstance) {
+        foreach ($instance in $SqlInstance) {
             # Try connecting to the instance
             try {
                 $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $SqlCredential -MinimumVersion 9
@@ -223,7 +223,7 @@ function Set-DbaLogin {
                 Stop-Function -Message 'Failure' -Category ConnectionError -ErrorRecord $_ -Target $instance -Continue
             }
             $allLogins[$instance.ToString()] = Get-DbaLogin -SqlInstance $server
-            $InputObject += $allLogins[$instance.ToString()] | Where-Object { ($_.Name -in $Login) -and ($_.IsSystemObject -eq $false) -and ($_.Name -notlike '##*') }
+            $InputObject += $allLogins[$instance.ToString()] | Where-Object { ($_.Name -in $Login) -and ($_.Name -notlike '##*') }
         }
 
         # Loop through all the logins

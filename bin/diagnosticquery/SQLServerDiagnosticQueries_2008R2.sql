@@ -1,25 +1,22 @@
 
 -- SQL Server 2008 R2 Diagnostic Information Queries
 -- Glenn Berry 
--- Last Modified: November 19, 2019
--- https://www.sqlserverperformance.wordpress.com/
--- https://www.sqlskills.com/blogs/glenn/
+-- Last Modified: November 1, 2020
+-- https://glennsqlperformance.com/
+-- https://sqlserverperformance.wordpress.com/
+-- YouTube: https://bit.ly/2PkoAM1 
 -- Twitter: GlennAlanBerry
 
--- Please listen to my Pluralsight courses
--- https://www.pluralsight.com/author/glenn-berry
-
--- If you want to find all of our SQLskills SQL101 blog posts, check out https://www.sqlskills.com/help/sql101/
+-- Diagnostic Queries are available here
+-- https://glennsqlperformance.com/resources/
 
 -- Many of these queries will not work if you have databases in 80 compatibility mode
 -- Please make sure you are using the correct version of these diagnostic queries for your version of SQL Server
 
 --******************************************************************************
---*   Copyright (C) 2019 Glenn Berry, SQLskills.com
+--*   Copyright (C) 2020 Glenn Berry
 --*   All rights reserved. 
 --*
---*   For more scripts and sample code, check out 
---*      https://www.sqlskills.com/blogs/glenn
 --*
 --*   You may alter this code for your own *non-commercial* purposes. You may
 --*   republish altered code as long as you include this copyright and give due credit. 
@@ -171,7 +168,7 @@ ORDER BY name OPTION (RECOMPILE);
 ------
 
 -- Gives you some basic information about your SQL Server Agent Alerts (which are different from SQL Server Agent jobs)
--- Read more about Agent Alerts here: https://www.sqlskills.com/blogs/glenn/creating-sql-server-agent-alerts-for-critical-errors/
+-- Read more about Agent Alerts here: https://bit.ly/2v5YR37
 
 
 -- Returns a list of all global trace flags that are enabled (Query 6) (Global Trace Flags)
@@ -183,18 +180,18 @@ DBCC TRACESTATUS (-1);
 
 -- Common trace flags that should be enabled in most cases
 -- TF 1117 - When growing a data file, grow all files at the same time so they remain the same size, reducing allocation contention points
---           http://support2.microsoft.com/kb/2154845
+--           https://bit.ly/2GY1kOl5
 -- 
 -- TF 1118 - Helps alleviate allocation contention in tempdb, SQL Server allocates full extents to each database object, 
 --           thereby eliminating the contention on SGAM pages (more important with older versions of SQL Server)
 --           Recommendations to reduce allocation contention in SQL Server tempdb database
---           http://support2.microsoft.com/kb/2154845
+--           https://bit.ly/2GY1kOl
 
 -- TF 2371 - Lowers auto update statistics threshold for large tables
---           http://blogs.msdn.com/b/saponsqlserver/archive/2011/09/07/changes-to-automatic-update-statistics-in-sql-server-traceflag-2371.aspx
+--           https://bit.ly/30KO4Hh
 
 -- TF 3226 - Supresses logging of successful database backup messages to the SQL Server Error Log
---           https://www.sqlskills.com/blogs/paul/fed-up-with-backup-success-messages-bloating-your-error-logs/
+--           https://bit.ly/38zDNAK 
 
 
 -- Windows information (SQL Server 2008 R2 SP1 or greater)  (Query 7) (Windows Info)
@@ -478,6 +475,15 @@ AND ls.cntr_value > 0
 ORDER BY db.[name] OPTION (RECOMPILE);
 ------
 
+-- sys.databases (Transact-SQL)
+-- https://bit.ly/2G5wqaX
+
+-- sys.dm_os_performance_counters (Transact-SQL)
+-- https://bit.ly/3kEO2JR
+
+-- sys.dm_database_encryption_keys (Transact-SQL)
+-- https://bit.ly/3mE7kkx
+
 -- Things to look at:
 -- How many databases are on the instance?
 -- What recovery models are they using?
@@ -655,20 +661,20 @@ OPTION (RECOMPILE);
 
 -- Cumulative wait stats are not as useful on an idle instance that is not under load or performance pressure
 
--- SQL Server Wait Types Library (Paul Randal)
--- https://www.sqlskills.com/help/waits/
+-- SQL Server Wait Types Library
+-- https://bit.ly/2ePzYO2
 
 -- The SQL Server Wait Type Repository
--- http://blogs.msdn.com/b/psssql/archive/2009/11/03/the-sql-server-wait-type-repository.aspx
+-- https://bit.ly/1afzfjC
 
 -- Wait statistics, or please tell me where it hurts
--- https://www.sqlskills.com/blogs/paul/wait-statistics-or-please-tell-me-where-it-hurts/
+-- https://bit.ly/2wsQHQE
 
 -- SQL Server 2005 Performance Tuning using the Waits and Queues
--- http://technet.microsoft.com/en-us/library/cc966413.aspx
+-- https://bit.ly/1o2NFoF
 
 -- sys.dm_os_wait_stats (Transact-SQL)
--- http://msdn.microsoft.com/en-us/library/ms179984(v=sql.105).aspx
+-- https://bit.ly/2Hjq9Yl
 
 
 
@@ -745,7 +751,7 @@ WHERE scheduler_id < 255 OPTION (RECOMPILE);
 -- High Avg Pending DiskIO Counts are a sign of disk pressure
 
 -- How to Do Some Very Basic SQL Server Monitoring
--- https://www.sqlskills.com/blogs/glenn/how-to-do-some-very-basic-sql-server-monitoring/
+-- https://bit.ly/30IRla0
 
 
 
@@ -800,7 +806,8 @@ ORDER BY qs.total_worker_time DESC OPTION (RECOMPILE);
 -- Good basic information about OS memory amounts and state  (Query 34) (System Memory)
 SELECT total_physical_memory_kb/1024 AS [Physical Memory (MB)], 
        available_physical_memory_kb/1024 AS [Available Memory (MB)], 
-       total_page_file_kb/1024 AS [Total Page File (MB)], 
+       total_page_file_kb/1024 AS [Page File Commit Limit (MB)],
+	   total_page_file_kb/1024 - total_physical_memory_kb/1024 AS [Physical Page File Size (MB)],
 	   available_page_file_kb/1024 AS [Available Page File (MB)], 
 	   system_cache_kb/1024 AS [System Cache (MB)],
        system_memory_state_desc AS [System Memory State]
@@ -1147,7 +1154,7 @@ ORDER BY cp.usecounts DESC OPTION (RECOMPILE);
 
 -- Breaks down buffers used by current database by object (table, index) in the buffer cache  (Query 54) (Buffer Usage)
 -- Note: This query could take some time on a busy instance
-SELECT SCHEMA_NAME(o.Schema_ID) AS [Schema Name],
+SELECT fg.name AS [Filegroup Name], SCHEMA_NAME(o.Schema_ID) AS [Schema Name],
 OBJECT_NAME(p.[object_id]) AS [Object Name], p.index_id, 
 CAST(COUNT(*)/128.0 AS DECIMAL(10, 2)) AS [Buffer size(MB)],  
 COUNT(*) AS [BufferCount], p.[Rows] AS [Row Count],
@@ -1159,12 +1166,17 @@ INNER JOIN sys.partitions AS p WITH (NOLOCK)
 ON a.container_id = p.hobt_id
 INNER JOIN sys.objects AS o WITH (NOLOCK)
 ON p.object_id = o.object_id
+INNER JOIN sys.database_files AS f WITH (NOLOCK)
+ON b.file_id = f.file_id
+INNER JOIN sys.filegroups AS fg WITH (NOLOCK)
+ON f.data_space_id = fg.data_space_id
 WHERE b.database_id = CONVERT(int, DB_ID())
 AND p.[object_id] > 100
 AND OBJECT_NAME(p.[object_id]) NOT LIKE N'plan_%'
 AND OBJECT_NAME(p.[object_id]) NOT LIKE N'sys%'
 AND OBJECT_NAME(p.[object_id]) NOT LIKE N'xml_index_nodes%'
-GROUP BY o.Schema_ID, p.[object_id], p.index_id, p.data_compression_desc, p.[Rows]
+GROUP BY fg.name, o.Schema_ID, p.[object_id], p.index_id, 
+         p.data_compression_desc, p.[Rows]
 ORDER BY [BufferCount] DESC OPTION (RECOMPILE);
 ------
 
@@ -1375,33 +1387,9 @@ ORDER BY bs.backup_finish_date DESC OPTION (RECOMPILE);
 -- Have you done any backup tuning with striped backups, or changing the parameters of the backup command?
 
 
--- These six Pluralsight Courses go into more detail about how to run these queries and interpret the results
-
--- Azure SQL Database: Diagnosing Performance Issues with DMVs
--- https://bit.ly/2meDRCN
-
--- SQL Server 2017: Diagnosing Performance Issues with DMVs
--- https://bit.ly/2FqCeti
-
--- SQL Server 2017: Diagnosing Configuration Issues with DMVs
--- https://bit.ly/2MSUDUL
-
--- SQL Server 2014 DMV Diagnostic Queries – Part 1 
--- https://bit.ly/2plxCer
-
--- SQL Server 2014 DMV Diagnostic Queries – Part 2
--- https://bit.ly/2IuJpzI
-
--- SQL Server 2014 DMV Diagnostic Queries – Part 3
--- https://bit.ly/2FIlCPb
-
-
-
 -- Microsoft Visual Studio Dev Essentials
 -- https://bit.ly/2qjNRxi
 
 -- Microsoft Azure Learn
 -- https://bit.ly/2O0Hacc
 
--- August 2017 blog series about upgrading and migrating to SQL Server 2016/2017
--- https://bit.ly/2ftKVrX

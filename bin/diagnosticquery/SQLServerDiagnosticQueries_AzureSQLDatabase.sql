@@ -1,24 +1,27 @@
 
 -- Azure SQL Database Diagnostic Information Queries
 -- Glenn Berry 
--- Last Modified: December 4, 2019
--- https://www.sqlskills.com/blogs/glenn/
--- http://sqlserverperformance.wordpress.com/
+-- Last Modified: November 1, 2020
+-- https://glennsqlperformance.com/
+-- https://sqlserverperformance.wordpress.com/
+-- YouTube: https://bit.ly/2PkoAM1 
 -- Twitter: GlennAlanBerry
 
--- Please listen to my Pluralsight courses
--- https://www.pluralsight.com/author/glenn-berry
+-- Diagnostic Queries are available here
+-- https://glennsqlperformance.com/resources/
 
--- If you want to find all of our SQLskills SQL101 blog posts, check out https://www.sqlskills.com/help/sql101/
 
+-- If you like PowerShell, there is a very useful community solution for running these queries in an automated fashion
+-- https://dbatools.io/
+
+-- Invoke-DbaDiagnosticQuery
+-- https://dbatools.io/functions/invoke-dbadiagnosticquery/
 
 
 --******************************************************************************
---*   Copyright (C) 2019 Glenn Berry, SQLskills.com
+--*   Copyright (C) 2020 Glenn Berry
 --*   All rights reserved. 
 --*
---*   For more scripts and sample code, check out 
---*      https://www.sqlskills.com/blogs/glenn
 --*
 --*   You may alter this code for your own *non-commercial* purposes. You may
 --*   republish altered code as long as you include this copyright and give due credit. 
@@ -87,14 +90,19 @@ ORDER BY avg_io_stall_ms DESC OPTION (RECOMPILE);
 
 -- Get I/O utilization by database (Query 5) (IO Usage By Database)
 WITH Aggregate_IO_Statistics
-AS
-(SELECT DB_NAME(database_id) AS [Database Name],
-CAST(SUM(num_of_bytes_read + num_of_bytes_written)/1048576 AS DECIMAL(12, 2)) AS io_in_mb
-FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS [DM_IO_STATS]
-GROUP BY database_id)
-SELECT ROW_NUMBER() OVER(ORDER BY io_in_mb DESC) AS [I/O Rank], [Database Name], 
-      CAST(io_in_mb/ SUM(io_in_mb) OVER() * 100.0 AS DECIMAL(5,2)) AS [I/O Percent],
-      io_in_mb AS [Total I/O (MB)]     
+AS (SELECT DB_NAME(database_id) AS [Database Name],
+    CAST(SUM(num_of_bytes_read + num_of_bytes_written) / 1048576 AS DECIMAL(12, 2)) AS [ioTotalMB],
+    CAST(SUM(num_of_bytes_read ) / 1048576 AS DECIMAL(12, 2)) AS [ioReadMB],
+    CAST(SUM(num_of_bytes_written) / 1048576 AS DECIMAL(12, 2)) AS [ioWriteMB]
+    FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS [DM_IO_STATS]
+    GROUP BY database_id)
+SELECT ROW_NUMBER() OVER (ORDER BY ioTotalMB DESC) AS [I/O Rank],
+        [Database Name], ioTotalMB AS [Total I/O (MB)],
+        CAST(ioTotalMB / SUM(ioTotalMB) OVER () * 100.0 AS DECIMAL(5, 2)) AS [Total I/O %],
+        ioReadMB AS [Read I/O (MB)], 
+		CAST(ioReadMB / SUM(ioReadMB) OVER () * 100.0 AS DECIMAL(5, 2)) AS [Read I/O %],
+        ioWriteMB AS [Write I/O (MB)], 
+		CAST(ioWriteMB / SUM(ioWriteMB) OVER () * 100.0 AS DECIMAL(5, 2)) AS [Write I/O %]
 FROM Aggregate_IO_Statistics
 ORDER BY [I/O Rank] OPTION (RECOMPILE);
 ------
@@ -358,13 +366,15 @@ db.is_mixed_page_allocation_on, db.page_verify_option_desc AS [Page Verify Optio
 db.is_auto_create_stats_on, db.is_auto_update_stats_on, db.is_auto_update_stats_async_on, db.is_parameterization_forced, 
 db.snapshot_isolation_state_desc, db.is_read_committed_snapshot_on, db.is_auto_close_on, db.is_auto_shrink_on, 
 db.target_recovery_time_in_seconds, db.is_cdc_enabled, db.is_memory_optimized_elevate_to_snapshot_on, 
-db.delayed_durability_desc, db.is_auto_create_stats_incremental_on,
-db.is_query_store_on, db.is_sync_with_backup, db.is_temporal_history_retention_enabled,
-db.is_encrypted, is_result_set_caching_on, is_accelerated_database_recovery_on, is_tempdb_spill_to_remote_store  
+db.delayed_durability_desc, db.is_query_store_on, db.is_temporal_history_retention_enabled,
+db.is_accelerated_database_recovery_on 
 FROM sys.databases AS db WITH (NOLOCK)
 WHERE db.[name] <> N'master'
 ORDER BY db.[name] OPTION (RECOMPILE);
 ------
+
+-- sys.databases (Transact-SQL)
+-- https://bit.ly/2G5wqaX
 
 -- Things to look at:
 -- What recovery model are you using?
@@ -509,14 +519,17 @@ OPTION (RECOMPILE);
 
 -- Cumulative wait stats are not as useful on an idle instance that is not under load or performance pressure
 
--- SQL Server Wait Types Library (Paul Randal)
--- https://www.sqlskills.com/help/waits/
+-- SQL Server Wait Types Library
+-- https://bit.ly/2ePzYO2
 
 -- The SQL Server Wait Type Repository
--- http://blogs.msdn.com/b/psssql/archive/2009/11/03/the-sql-server-wait-type-repository.aspx
+-- https://bit.ly/1afzfjC
 
 -- Wait statistics, or please tell me where it hurts
--- https://www.sqlskills.com/blogs/paul/wait-statistics-or-please-tell-me-where-it-hurts/
+-- https://bit.ly/2wsQHQE
+
+-- SQL Server 2005 Performance Tuning using the Waits and Queues
+-- https://bit.ly/1o2NFoF
 
 -- sys.dm_db_wait_stats (Azure SQL Database)
 -- https://bit.ly/2HoJOoT
@@ -1220,28 +1233,6 @@ SELECT DATABASEPROPERTYEX (DB_NAME(DB_ID()), 'Edition') AS [Database Edition],
 
 -- DATABASEPROPERTYEX (Transact-SQL)
 -- https://bit.ly/2ItexPg
-
-
--- These six Pluralsight Courses go into more detail about how to run these queries and interpret the results
-
--- Azure SQL Database: Diagnosing Performance Issues with DMVs
--- https://bit.ly/2meDRCN
-
--- SQL Server 2017: Diagnosing Performance Issues with DMVs
--- https://bit.ly/2FqCeti
-
--- SQL Server 2017: Diagnosing Configuration Issues with DMVs
--- https://bit.ly/2MSUDUL
-
--- SQL Server 2014 DMV Diagnostic Queries – Part 1 
--- https://bit.ly/2plxCer
-
--- SQL Server 2014 DMV Diagnostic Queries – Part 2
--- https://bit.ly/2IuJpzI
-
--- SQL Server 2014 DMV Diagnostic Queries – Part 3
--- https://bit.ly/2FIlCPb
-
 
 
 -- Microsoft Visual Studio Dev Essentials

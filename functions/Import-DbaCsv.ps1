@@ -95,7 +95,7 @@ function Import-DbaCsv {
         This behaviour will be overridden if the -Schema parameter is specified.
 
     .PARAMETER TableLock
-        If this switch is enabled, the SqlBulkCopy option to acquire a table lock will be used. This is automatically used if -Turbo is enabled.
+        If this switch is enabled, the SqlBulkCopy option to acquire a table lock will be used.
 
         Per Microsoft "Obtain a bulk update lock for the duration of the bulk copy operation. When not
         specified, row locks are used."
@@ -125,14 +125,17 @@ function Import-DbaCsv {
 
     .PARAMETER Quote
         Defines the default quote character wrapping every field.
+        Default: double-quotes
 
     .PARAMETER Escape
         Defines the default escape character letting insert quotation characters inside a quoted field.
 
         The escape character can be the same as the quote character.
+        Default: double-quotes
 
     .PARAMETER Comment
-        Defines the default comment character indicating that a line is commented out. Default is #.
+        Defines the default comment character indicating that a line is commented out.
+        Default: hashtag
 
     .PARAMETER TrimmingOption
         Determines which values should be trimmed. Default is "None". Options are All, None, UnquotedOnly and QuotedOnly.
@@ -436,7 +439,7 @@ function Import-DbaCsv {
                 $elapsed = [System.Diagnostics.Stopwatch]::StartNew()
                 # Open Connection to SQL Server
                 try {
-                    $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $sqlcredential -StatementTimeout 0 -MinimumVersion 9
+                    $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $SqlCredential -StatementTimeout 0 -MinimumVersion 9
                     $sqlconn = $server.ConnectionContext.SqlConnectionObject
                     if ($sqlconn.State -ne 'Open') {
                         $sqlconn.Open()
@@ -557,7 +560,7 @@ function Import-DbaCsv {
                                 try {
                                     $firstline = Get-Content -Path $file -TotalCount 1 -ErrorAction Stop
                                     $ColumnMapping = @{ }
-                                    $firstline -split $Delimiter | ForEach-Object {
+                                    $firstline -split "$Delimiter", 0, "SimpleMatch" | ForEach-Object {
                                         $ColumnMapping.Add($_, $_)
                                     }
                                     $ColumnMap += $ColumnMapping

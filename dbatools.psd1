@@ -11,7 +11,7 @@
     RootModule             = 'dbatools.psm1'
 
     # Version number of this module.
-    ModuleVersion          = '1.0.112'
+    ModuleVersion          = '1.0.135'
 
     # ID used to uniquely identify this module
     GUID                   = '9d139310-ce45-41ce-8e8b-d76335aa1789'
@@ -135,6 +135,7 @@
         'Get-DbaLastBackup',
         'Connect-DbaInstance',
         'Get-DbaDbBackupHistory',
+        'Get-DbaAgBackupHistory',
         'Read-DbaBackupHeader',
         'Test-DbaLastBackup',
         'Get-DbaMaxMemory',
@@ -495,6 +496,11 @@
         'Get-DbaDbAsymmetricKey',
         'New-DbaDbAsymmetricKey',
         'Remove-DbaDbAsymmetricKey',
+        'Invoke-DbaDbTransfer',
+        'New-DbaDbTransfer',
+        'Remove-DbaDbData',
+        'Test-DbaDbQueryStore',
+        'Install-DbaMultiTool',
         # noncoresmo
         # SMO issues
         'Export-DbaUser',
@@ -515,6 +521,7 @@
         'Test-DbaRepLatency',
         'Export-DbaRepServerSetting',
         'Get-DbaRepServer',
+        'Export-DbaSysDbUserObject',
         # windowsonly
         # solvable filesystem issues or other workarounds
         'Install-DbaSqlWatch',
@@ -526,6 +533,7 @@
         'Get-DbaAgentJobOutputFile',
         'Set-DbaAgentJobOutputFile',
         'Get-DbaBuildReference',
+        'Update-DbaBuildReference',
         'New-DbaDacProfile'
         'Import-DbaXESessionTemplate',
         'Export-DbaXESessionTemplate',

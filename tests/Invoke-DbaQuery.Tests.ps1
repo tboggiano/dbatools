@@ -29,6 +29,7 @@ Describe "$CommandName Integration Tests" -Tag "IntegrationTests" {
         } catch {
             $null = 1
         }
+        Remove-Item ".\hellorelative.sql" -ErrorAction SilentlyContinue
     }
     It "supports pipable instances" {
         $results = $script:instance2, $script:instance3 | Invoke-DbaQuery -Database tempdb -Query "Select 'hello' as TestColumn"
@@ -59,7 +60,7 @@ Describe "$CommandName Integration Tests" -Tag "IntegrationTests" {
         foreach ($result in $results) {
             $result.TestColumn | Should -Be 'hello'
         }
-        'tempdb' | Should -Bein $results.dbname
+        'tempdb' | Should -BeIn $results.dbname
     }
     It "stops when piped databases and -Database" {
         $dbs = Get-DbaDatabase -SqlInstance $script:instance2, $script:instance3
@@ -67,24 +68,24 @@ Describe "$CommandName Integration Tests" -Tag "IntegrationTests" {
     }
     It "supports reading files" {
         $testPath = "TestDrive:\dbasqlquerytest.txt"
-        Set-Content $testPath -value "Select 'hello' as TestColumn, DB_NAME() as dbname"
+        Set-Content $testPath -Value "Select 'hello' as TestColumn, DB_NAME() as dbname"
         $results = Invoke-DbaQuery -SqlInstance $script:instance2 -Database tempdb -File $testPath
         foreach ($result in $results) {
             $result.TestColumn | Should -Be 'hello'
         }
-        'tempdb' | Should -Bein $results.dbname
+        'tempdb' | Should -BeIn $results.dbname
     }
     It "supports reading entire directories, just *.sql" {
         $testPath = "TestDrive:\"
-        Set-Content "$testPath\dbasqlquerytest.sql" -value "Select 'hello' as TestColumn, DB_NAME() as dbname"
-        Set-Content "$testPath\dbasqlquerytest2.sql" -value "Select 'hello2' as TestColumn, DB_NAME() as dbname"
-        Set-Content "$testPath\dbasqlquerytest2.txt" -value "Select 'hello3' as TestColumn, DB_NAME() as dbname"
+        Set-Content "$testPath\dbasqlquerytest.sql" -Value "Select 'hello' as TestColumn, DB_NAME() as dbname"
+        Set-Content "$testPath\dbasqlquerytest2.sql" -Value "Select 'hello2' as TestColumn, DB_NAME() as dbname"
+        Set-Content "$testPath\dbasqlquerytest2.txt" -Value "Select 'hello3' as TestColumn, DB_NAME() as dbname"
         $pathinfo = Get-Item $testpath
         $results = Invoke-DbaQuery -SqlInstance $script:instance2 -Database tempdb -File $pathinfo
-        'hello' | Should -Bein $results.TestColumn
-        'hello2' | Should -Bein $results.TestColumn
-        'hello3' | Should -Not -Bein $results.TestColumn
-        'tempdb' | Should -Bein $results.dbname
+        'hello' | Should -BeIn $results.TestColumn
+        'hello2' | Should -BeIn $results.TestColumn
+        'hello3' | Should -Not -BeIn $results.TestColumn
+        'tempdb' | Should -BeIn $results.dbname
 
     }
     It "supports http files" {
@@ -102,7 +103,7 @@ Describe "$CommandName Integration Tests" -Tag "IntegrationTests" {
         $null = Invoke-DbaQuery -SqlInstance $script:instance2, $script:instance3 -Database tempdb -Query $cleanup
         $CloudQuery = 'https://raw.githubusercontent.com/sqlcollaborative/appveyor-lab/master/sql2016-startup/ola/CommandLog.sql'
         $null = Invoke-DbaQuery -SqlInstance $script:instance2 -Database tempdb -File $CloudQuery
-        $smoobj = Get-DbaDbTable -SqlInstance $script:instance2 -Database tempdb | Where-Object Name -eq 'CommandLog'
+        $smoobj = Get-DbaDbTable -SqlInstance $script:instance2 -Database tempdb | Where-Object Name -EQ 'CommandLog'
         $null = Invoke-DbaQuery -SqlInstance $script:instance3 -Database tempdb -SqlObject $smoobj
         $check = "SELECT name FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CommandLog]') AND type in (N'U')"
         $results = Invoke-DbaQuery -SqlInstance $script:instance3 -Database tempdb -Query $check
@@ -132,14 +133,14 @@ SELECT @@servername as dbname
         PRINT 'stmt_1|PRINT start|' + CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         SET @time= CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         RAISERROR ('stmt_2|RAISERROR before WITHOUT NOWAIT|%s', 0, 1, @time)
-        WAITFOR DELAY '00:00:03'
+        WAITFOR DELAY '00:00:01'
         PRINT 'stmt_3|PRINT after the first delay|' + CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         SET @time= CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         RAISERROR ('stmt_4|RAISERROR with NOWAIT|%s', 0, 1, @time) WITH NOWAIT
-        WAITFOR DELAY '00:00:03'
+        WAITFOR DELAY '00:00:01'
         PRINT 'stmt_5|PRINT after the second delay|' + CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         SELECT 'hello' AS TestColumn
-        WAITFOR DELAY '00:00:03'
+        WAITFOR DELAY '00:00:01'
         PRINT 'stmt_6|PRINT end|' + CONVERT(VARCHAR(19), GETUTCDATE(), 126)
 '@
         $results = @()
@@ -149,6 +150,8 @@ SELECT @@servername as dbname
                 Out     = $_
             }
         }
+        # Filter out the Verbose messages of the command Connect-DbaInstance
+        $results = $results | Where-Object Out -NotMatch '\[Connect-DbaInstance\]'
         $results.Length | Should -Be 7 # 6 'messages' plus the actual resultset
         ($results | ForEach-Object { Get-Date -Date $_.FiredAt -Format s } | Get-Unique).Count | Should -Not -Be 1 # the first WITH NOWAIT (stmt_4) and after
         #($results[0..3]  | ForEach-Object { Get-Date -Date $_.FiredAt -f s } | Get-Unique).Count | Should -Be 1 # everything before stmt_4 is fired at the same time
@@ -163,14 +166,14 @@ SELECT @@servername as dbname
         PRINT 'stmt_1|PRINT start|' + CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         SET @time= CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         RAISERROR ('stmt_2|RAISERROR before WITHOUT NOWAIT|%s', 0, 1, @time)
-        WAITFOR DELAY '00:00:03'
+        WAITFOR DELAY '00:00:01'
         PRINT 'stmt_3|PRINT after the first delay|' + CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         SET @time= CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         RAISERROR ('stmt_4|RAISERROR with NOWAIT|%s', 0, 1, @time) WITH NOWAIT
-        WAITFOR DELAY '00:00:03'
+        WAITFOR DELAY '00:00:01'
         PRINT 'stmt_5|PRINT after the second delay|' + CONVERT(VARCHAR(19), GETUTCDATE(), 126)
         SELECT 'hello' AS TestColumn
-        WAITFOR DELAY '00:00:03'
+        WAITFOR DELAY '00:00:01'
         PRINT 'stmt_6|PRINT end|' + CONVERT(VARCHAR(19), GETUTCDATE(), 126)
 '@
         $results = @()
@@ -186,5 +189,29 @@ SELECT @@servername as dbname
     It "Executes stored procedures with parameters" {
         $results = Invoke-DbaQuery -SqlInstance $script:instance2 -Database tempdb -Query "dbatoolsci_procedure_example" -SqlParameters @{p1 = 1 } -CommandType StoredProcedure
         $results.TestColumn | Should Be 1
+    }
+    It "Executes script file with a relative path (see #6184)" {
+        Set-Content -Path ".\hellorelative.sql" -Value "Select 'hello' as TestColumn, DB_NAME() as dbname"
+        $results = Invoke-DbaQuery -SqlInstance $script:instance2 -Database tempdb -File ".\hellorelative.sql"
+        foreach ($result in $results) {
+            $result.TestColumn | Should -Be 'hello'
+        }
+        'tempdb' | Should -BeIn $results.dbname
+    }
+    It "supports multiple datatables also as array of PSObjects (see #6921)" {
+        $results = Invoke-DbaQuery -SqlInstance $script:instance2 -Database tempdb -Query "select 1 as a union all select 2 union all select 3; select 4 as b, 5 as c union all select 6, 7;" -As PSObjectArray
+        $results.Count | Should -Be 2
+        $results[0].Count | Should -Be 3
+        $results[0][0].a | Should -Be 1
+        $results[1].Count | Should -Be 2
+        $results[1][0].b | Should -Be 4
+        $results[1][1].c | Should -Be 7
+    }
+    It "supports multiple datatables also as PSObjects (see #6921)" {
+        $results = Invoke-DbaQuery -SqlInstance $script:instance2 -Database tempdb -Query "select 1 as a union all select 2 union all select 3; select 4 as b, 5 as c union all select 6, 7;" -As PSObject
+        $results.Count | Should -Be 5
+        $results[0].a | Should -Be 1
+        $results[3].b | Should -Be 4
+        $results[4].c | Should -Be 7
     }
 }

@@ -394,6 +394,7 @@ $script:xplat = @(
     'Get-DbaLastBackup',
     'Connect-DbaInstance',
     'Get-DbaDbBackupHistory',
+    'Get-DbaAgBackupHistory',
     'Read-DbaBackupHeader',
     'Test-DbaLastBackup',
     'Get-DbaMaxMemory',
@@ -405,6 +406,9 @@ $script:xplat = @(
     'Get-DbaDbAsymmetricKey',
     'New-DbaDbAsymmetricKey',
     'Remove-DbaDbAsymmetricKey',
+    'Invoke-DbaDbTransfer',
+    'New-DbaDbTransfer',
+    'Remove-DbaDbData',
     'Resolve-DbaNetworkName',
     'Export-DbaAvailabilityGroup',
     'Write-DbaDbTableData',
@@ -762,12 +766,16 @@ $script:xplat = @(
     'Export-DbaDbRole',
     'Export-DbaServerRole',
     'Get-DbaBuildReference',
+    'Update-DbaBuildReference',
     'Install-DbaFirstResponderKit',
     'Install-DbaWhoIsActive',
     'Update-Dbatools',
     'Add-DbaServerRoleMember',
     'Get-DbatoolsPath',
-    'Set-DbatoolsPath'
+    'Set-DbatoolsPath',
+    'Export-DbaSysDbUserObject',
+    'Test-DbaDbQueryStore',
+    'Install-DbaMultiTool'
 )
 
 $script:noncoresmo = @(

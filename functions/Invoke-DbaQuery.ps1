@@ -33,9 +33,9 @@ function Invoke-DbaQuery {
         Specify one or more SQL objects. Those will be converted to script and their scripts run on the target system(s).
 
     .PARAMETER As
-        Specifies output type. Valid options for this parameter are 'DataSet', 'DataTable', 'DataRow', 'PSObject', and 'SingleValue'
+        Specifies output type. Valid options for this parameter are 'DataSet', 'DataTable', 'DataRow', 'PSObject', 'PSObjectArray', and 'SingleValue'
 
-        PSObject output introduces overhead but adds flexibility for working with results: http://powershell.org/wp/forums/topic/dealing-with-dbnull/
+        PSObject and PSObjectArray output introduces overhead but adds flexibility for working with results: http://powershell.org/wp/forums/topic/dealing-with-dbnull/
 
     .PARAMETER SqlParameters
         Specifies a hashtable of parameters for parameterized SQL queries.  http://blog.codinghorror.com/give-me-parameterized-sql-or-give-me-death/
@@ -44,7 +44,7 @@ function Invoke-DbaQuery {
         If this switch is enabled, the SQL Server instance will be appended to PSObject and DataRow output.
 
     .PARAMETER MessagesToOutput
-        Use this switch to have on the output stream messages too (e.g. PRINT statements). Output will hold the resultset too. See examples for detail
+        Use this switch to have on the output stream messages too (e.g. PRINT statements). Output will hold the resultset too.
 
     .PARAMETER InputObject
         A collection of databases (such as returned by Get-DbaDatabase)
@@ -105,9 +105,18 @@ function Invoke-DbaQuery {
         Executes a query with ReadOnly application intent on aglistener1.
 
     .EXAMPLE
-        PS C:\>Invoke-DbaQuery -SqlInstance "server1" -Database tempdb -Query "Example_SP" -SqlParameters @{ Name = "Maria" } -CommandType StoredProcedure
+        PS C:\> Invoke-DbaQuery -SqlInstance "server1" -Database tempdb -Query "Example_SP" -SqlParameters @{ Name = "Maria" } -CommandType StoredProcedure
 
         Executes a stored procedure Example_SP using SQL Parameters
+
+    .EXAMPLE
+        PS C:\> $QueryParameters = @{
+            "StartDate" = $startdate;
+            "EndDate" = $enddate;
+        };
+        PS C:\> Invoke-DbaQuery -SqlInstance "server1" -Database tempdb -Query "Example_SP" -SqlParameters $QueryParameters -CommandType StoredProcedure
+
+        Executes a stored procedure Example_SP using multiple SQL Parameters
     #>
     [CmdletBinding(DefaultParameterSetName = "Query")]
     param (
@@ -123,7 +132,7 @@ function Invoke-DbaQuery {
         [object[]]$File,
         [Parameter(Mandatory, ParameterSetName = "SMO")]
         [Microsoft.SqlServer.Management.Smo.SqlSmoObject[]]$SqlObject,
-        [ValidateSet("DataSet", "DataTable", "DataRow", "PSObject", "SingleValue")]
+        [ValidateSet("DataSet", "DataTable", "DataRow", "PSObject", "PSObjectArray", "SingleValue")]
         [string]$As = "DataRow",
         [System.Collections.IDictionary]$SqlParameters,
         [System.Data.CommandType]$CommandType = 'Text',
@@ -192,13 +201,18 @@ function Invoke-DbaQuery {
                         $files += $item.FullName
                     }
                     "System.String" {
-                        if (Test-PsVersion -Is 3) {
-                            $uri = [uri]$item
-                        } else {
-                            $uri = [uri]::New($item)
+                        try {
+                            if (Test-PsVersion -Is 3) {
+                                $uri = [uri]$item
+                            } else {
+                                $uri = [uri]::New($item)
+                            }
+                            $uriScheme = $uri.Scheme
+                        } catch {
+                            $uriScheme = $null
                         }
 
-                        switch -regex ($uri.Scheme) {
+                        switch -regex ($uriScheme) {
                             "http" {
                                 $tempfile = "$(Get-DbatoolsPath -Name temp)\$temporaryFilesPrefix-$temporaryFilesCount.sql"
                                 try {
@@ -319,6 +333,7 @@ function Invoke-DbaQuery {
             }
         }
         foreach ($instance in $SqlInstance) {
+            Write-Message -Level Debug -Message "SqlInstance passed in, will work on: $instance"
             try {
                 $connDbaInstanceParams = @{
                     SqlInstance   = $instance
@@ -326,6 +341,7 @@ function Invoke-DbaQuery {
                     Database      = $Database
                 }
                 if ($ReadOnly) {
+                    # TODO: This will not work, if SqlInstance is already a server object
                     $connDbaInstanceParams.ApplicationIntent = "ReadOnly"
                 }
                 $server = Connect-DbaInstance @connDbaInstanceParams
@@ -334,10 +350,12 @@ function Invoke-DbaQuery {
             }
             $conncontext = $server.ConnectionContext
             try {
-                if ($Database -and $conncontext.DatabaseName -ne $Database) {
-                    #$conncontext = $server.ConnectionContext.Copy()
-                    #$conncontext.DatabaseName = $Database
-                    $conncontext = $server.ConnectionContext.Copy().GetDatabaseConnection($Database)
+                if (-not (Get-DbatoolsConfigValue -FullName sql.connection.experimental)) {
+                    if ($Database -and $conncontext.DatabaseName -ne $Database) {
+                        #$conncontext = $server.ConnectionContext.Copy()
+                        #$conncontext.DatabaseName = $Database
+                        $conncontext = $server.ConnectionContext.Copy().GetDatabaseConnection($Database)
+                    }
                 }
                 if ($File -or $SqlObject) {
                     foreach ($item in $files) {
