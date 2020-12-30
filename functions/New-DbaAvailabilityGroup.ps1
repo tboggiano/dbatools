@@ -141,9 +141,6 @@ function New-DbaAvailabilityGroup {
     .PARAMETER ListenerName
         Sets listener name for primary AG.
 
-    .PARAMETER DagListenerName
-        Sets listener name for the Distributed AG.
-
     .PARAMETER IPAddress
         Sets the IP address of the availability group listener.
 
@@ -155,6 +152,9 @@ function New-DbaAvailabilityGroup {
 
     .PARAMETER Dhcp
         Indicates whether the object is DHCP.
+
+    .PARAMETER Distributed
+        Indicates whether the AG is a Distributed AG.
 
     .PARAMETER WhatIf
         Shows what would happen if the command were to run. No actions are actually performed.
@@ -212,6 +212,15 @@ function New-DbaAvailabilityGroup {
         PS C:\> New-DbaAvailabilityGroup -Primary sql1 -Secondary sql2 -Name ag1 -Database pubs -EndpointUrl 'TCP://sql1.specialnet.local:5022', 'TCP://sql2.specialnet.local:5022'
 
         Creates a new availability group with a primary replica on sql1 and a secondary on sql2 with custom endpoint urls. Automatically adds the database pubs.
+
+    .EXAMPLE
+        PS C:\> New-DbaAvaiabliytGroup -Primary sql1 -Secondary sql2 -Name ag1 -Database pubs -EndpointUrl 'TCP://sql1.specialnet.local:5022', 'TCP://sql2.specialnet.local:5022' -ListenerName AGL1 -DHCP
+
+        PS C:\> New-DbaAvaiabliytGroup -Primary sql3 -Secondary sql4 -Name ag2 -Database pubs -EndpointUrl 'TCP://sql4.specialnet.local:5022', 'TCP://sql3.specialnet.local:5022' -ListenerName AGL2 -DHCP
+
+        PS C:\> New-DbaAvaiabliytGroup -Primary sql1 -Secondary sql3 -Name dag -Database pubs -EndpointUrl 'TCP://AGL1.specialnet.local:5022', 'TCP://AGL2.specialnet.local:5022'
+
+        Create a Distrbuted availability group.
 
     .EXAMPLE
         PS C:\> $cred = Get-Credential sqladmin
@@ -279,7 +288,6 @@ function New-DbaAvailabilityGroup {
         # network
 
         [string]$ListenerName,
-        [string]$DagListnerName,
         [ipaddress[]]$IPAddress,
         [ipaddress]$SubnetMask = "255.255.255.0",
         [int]$Port = 1433,
@@ -287,6 +295,7 @@ function New-DbaAvailabilityGroup {
 
         #Distibuted AGs
         [switch]$Distributed,
+
         [switch]$EnableException
     )
     begin {
@@ -295,7 +304,7 @@ function New-DbaAvailabilityGroup {
     process {
         $stepCounter = $wait = 0
 
-        if ($Force -and $Secondary -and (-not $SharedPath -and -not $UseLastBackup) -and ($SeedingMode -ne 'Automatic')) {
+        if ($Force -and $Secondary -and (-not $SharedPath -and -not $UseLastBackup) -and ($SeedingMode -ne 'Automatic') -and -not $Distributed) {
             Stop-Function -Message "SharedPath or UseLastBackup is required when Force is used"
             return
         }
@@ -313,7 +322,7 @@ function New-DbaAvailabilityGroup {
             }
         }
 
-        if ($ConnectionModeInSecondaryRole) {
+        if ($ConnectionModeInSecondaryRole -and -not $Distrbuted) {
             $ConnectionModeInSecondaryRole =
             switch ($ConnectionModeInSecondaryRole) {
                 "No" { "AllowNoConnections" }
@@ -333,6 +342,12 @@ function New-DbaAvailabilityGroup {
         }
         catch {
             Stop-Function -Message "Error occurred while establishing connection to $Primary" -Category ConnectionError -ErrorRecord $_ -Target $Primary
+            return
+        }
+
+        #Double check version
+        if ($Distrbuted -and $server.VersionMajor -lt 13) {
+            Stop-Function -Message "Distrbuted availabilyt groups are only supported in SQL Server 2017 and above."
             return
         }
 
@@ -426,15 +441,6 @@ function New-DbaAvailabilityGroup {
             return
         }
 
-        if (-not $Distributed -and $null -eq $ListenerName) {
-            Stop-Function -Continue -Message "You must specify a name for the listener for the you AG."
-            return
-        }
-        elseif ($Distributed -and $null -eq $DagListenerName) {
-            Stop-Function -Continue -Message "You must specify a specficy a name for the Distributed AG Listener "
-            return
-        }
-
         if ($server.HostPlatform -eq "Linux") {
             # New to SQL Server 2017 (14.x) is the introduction of a cluster type for AGs. For Linux, there are two valid values: External and None.
             if ($ClusterType -notin "External", "None") {
@@ -455,9 +461,7 @@ function New-DbaAvailabilityGroup {
 
         # database checks
         if ($Database) {
-            if (-not $Distributed) {
-                $dbs += Get-DbaDatabase -SqlInstance $Primary -SqlCredential $PrimarySqlCredential -Database $Database
-            }
+            $dbs += Get-DbaDatabase -SqlInstance $Primary -SqlCredential $PrimarySqlCredential -Database $Database
         }
 
         foreach ($primarydb in $dbs) {
@@ -618,9 +622,6 @@ function New-DbaAvailabilityGroup {
         }
         Write-ProgressHelper -StepNumber ($stepCounter++) -Message $progressmsg
 
-        if ($Distrbuted) {
-            $ListenerName = $DagListnerName
-        }
         if ($IPAddress) {
             if ($Pscmdlet.ShouldProcess($Primary, "Adding static IP listener for $Name to the primary replica")) {
                 $null = Add-DbaAgListener -InputObject $ag -IPAddress $IPAddress -SubnetMask $SubnetMask -Port $Port
